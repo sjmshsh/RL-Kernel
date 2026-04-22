@@ -3,7 +3,11 @@
 
 import os
 from setuptools import setup, find_packages
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension, ROCMExtension
+from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+try:
+    from torch.utils.cpp_extension import ROCMExtension
+except ImportError:
+    ROCMExtension = None
 import torch
 
 def get_extensions():

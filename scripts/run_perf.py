@@ -46,6 +46,8 @@ def main():
     parser.add_argument("--vocab-size", type=int, default=128256, help="Model vocab size")
     parser.add_argument("--seq-len", type=int, default=512, help="Sequence length")
     parser.add_argument("--g-sizes", type=str, default="64,128,256", help="Batch sizes to test")
+    parser.add_argument("--top-k", type=int, default=50, help="Top-K sampling")
+    parser.add_argument("--top-p", type=float, default=0.9, help="Top-P sampling")
     args = parser.parse_args()
 
     device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "AMD MI300X/ROCm"

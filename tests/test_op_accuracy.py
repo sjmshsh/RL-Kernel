@@ -39,7 +39,7 @@ def test_accuracy():
     threshold = 1e-5 if dtype == torch.float32 else 1e-3
     
     print("\n" + "="*50)
-    print(f"RESUTLS FOR {device.upper()}")
+    print(f"RESULTS FOR {str(device).upper()}")
     print("-" * 50)
     print(f"Max Difference: {diff:.8e}")
     
