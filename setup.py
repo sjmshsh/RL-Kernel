@@ -1,28 +1,28 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Kernel-Align Contributors
 
-from setuptools import setup, find_packages
+import os
+import torch
+from setuptools import find_packages, setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 try:
     from torch.utils.cpp_extension import ROCMExtension
 except ImportError:
     ROCMExtension = None
-import torch
 
 
 def get_extensions():
     extensions = []
-
     is_rocm = torch.version.hip is not None
 
     if is_rocm:
         extensions.append(
             ROCMExtension(
-                name="kernel_align_ops",
+                name="rl_engine._C",
                 sources=[
                     "csrc/ops.cpp",
-                    "csrc/fused_logp_kernel.cpp",  # ROCm uses .cpp for HIP kernels
+                    "csrc/fused_logp_kernel.cpp",
                 ],
                 extra_compile_args={
                     "cxx": ["-O3", "-std=c++17"],
@@ -31,17 +31,30 @@ def get_extensions():
             )
         )
     elif torch.cuda.is_available():
+        cuda_sources = [
+            "csrc/ops.cpp",
+            "csrc/fused_logp_kernel.cu",
+        ]
+
+        cc_major, _ = torch.cuda.get_device_capability()
+        nvcc_flags = ["-O3", "--use_fast_math", "-Xfatbin", "-compress-all"]
+        extra_link_args = []
+
+        tma_src = "csrc/cuda/fused_logp_sm90.cu"
+        if cc_major >= 9 or os.path.exists(tma_src):
+            cuda_sources.append(tma_src)
+            nvcc_flags.append("-gencode=arch=compute_90a,code=sm_90a")
+            extra_link_args.append("-lcuda")
+
         extensions.append(
             CUDAExtension(
-                name="kernel_align_ops",
-                sources=[
-                    "csrc/ops.cpp",
-                    "csrc/fused_logp_kernel.cu",
-                ],
+                name="rl_engine._C",
+                sources=cuda_sources,
                 extra_compile_args={
                     "cxx": ["-O3", "-std=c++17"],
-                    "nvcc": ["-O3", "--use_fast_math", "-Xfatbin", "-compress-all"],
+                    "nvcc": nvcc_flags,
                 },
+                extra_link_args=extra_link_args,
             )
         )
     return extensions
