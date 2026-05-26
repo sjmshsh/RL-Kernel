@@ -1,0 +1,6 @@
+# rl_engine/_C.pyi
+# This file is a type stub for the compiled C++ extension module.
+import torch
+
+def fused_logp(logits: torch.Tensor, token_ids: torch.Tensor) -> torch.Tensor: ...
+def fused_logp_sm90(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor: ...

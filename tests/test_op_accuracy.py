@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Kernel-Align Contributors
 
 import torch
-from rl_engine.kernels.fused_ops import FusedLogp
+from rl_engine.kernels.registry import kernel_registry
 from rl_engine.platforms.device import device_ctx
 from rl_engine.utils.logger import logger
 
@@ -15,33 +15,34 @@ def test_accuracy():
 
     G, L, V = 16, 128, 4096
 
-    logits = torch.randn(G, L, V, device=device, dtype=dtype)
-    token_ids = torch.randint(0, V, (G, L), device=device)
+    logits = torch.randn(G * L, V, device=device, dtype=dtype)
+    token_ids = torch.randint(0, V, (G * L,), device=device, dtype=torch.int32)
 
     if device.type == "cuda":
         torch.cuda.synchronize()
 
     with torch.no_grad():
         ref_logp = torch.log_softmax(logits.float(), dim=-1)
-        ref_logp = torch.gather(ref_logp, dim=-1, index=token_ids.unsqueeze(-1)).squeeze(-1)
+        ref_logp = torch.gather(ref_logp, dim=-1, index=token_ids.unsqueeze(-1).long()).squeeze(-1)
         ref_logp = ref_logp.to(dtype)
 
     if device.type == "cuda":
         torch.cuda.synchronize()
 
     try:
-        custom_logp = FusedLogp.apply(logits, token_ids)
+        logp_operator = kernel_registry.get_op("logp")
+        custom_logp = logp_operator(logits, token_ids)
     except Exception as e:
         logger.error(f"Failed to execute FusedLogp: {e}")
         return
 
-    diff = torch.abs(ref_logp - custom_logp).max().item()
-
-    threshold = 1e-5 if dtype == torch.float32 else 1e-3
+    diff = torch.abs(ref_logp.float() - custom_logp.float()).max().item()
+    threshold = 1e-3 if dtype == torch.bfloat16 else 1e-5
 
     print("\n" + "=" * 50)
     print(f"RESULTS FOR {str(device).upper()}")
     print("-" * 50)
+    print(f"Dispatched Operator Class: {logp_operator.__class__.__name__}")
     print(f"Max Difference: {diff:.8e}")
 
     if diff < threshold:

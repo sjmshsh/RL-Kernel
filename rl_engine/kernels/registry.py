@@ -24,6 +24,10 @@ class OpBackend(Enum, metaclass=_KernelEnumMeta):
     FLASH_ATTN = "rl_engine.kernels.cuda.flash_attn.FlashAttentionOp"
     FLASHINFER = "rl_engine.kernels.cuda.flashinfer.FlashInferOp"
 
+    # TMA-accelerated LogP for SM90+ (Warp Specialization)
+    CUDA_FUSED_LOGP_SM90 = "rl_engine.kernels.ops.cuda.FusedLogpSM90Op"
+    CUDA_FUSED_LOGP_GENERIC = "rl_engine.kernels.ops.cuda.FusedLogpGenericOp"
+
     # AMD ROCm optimized stack
     ROCM_AITER = "rl_engine.kernels.rocm.aiter.AiterOp"
     ROCM_CK = "rl_engine.kernels.rocm.composable_kernel.CKOp"
@@ -45,8 +49,14 @@ class KernelRegistry:
 
         self._priority_map = {
             "cuda": {
-                "logp": [OpBackend.FLASHINFER, OpBackend.TRITON_GENERIC, OpBackend.PYTORCH_NATIVE],
+                "logp": [
+                    OpBackend.CUDA_FUSED_LOGP_GENERIC,
+                    OpBackend.FLASHINFER,
+                    OpBackend.TRITON_GENERIC,
+                    OpBackend.PYTORCH_NATIVE,
+                ],
                 "attn": [OpBackend.FLASH_ATTN, OpBackend.TRITON_GENERIC, OpBackend.PYTORCH_NATIVE],
+                ## Default dispatch logic for new operators
             },
             "rocm": {
                 "logp": [OpBackend.ROCM_AITER, OpBackend.TRITON_GENERIC, OpBackend.PYTORCH_NATIVE],
@@ -58,6 +68,29 @@ class KernelRegistry:
             },
         }
         logger.info(f"KernelRegistry initialized for {device_ctx.device_type}")
+        self._adjust_priority_for_hardware()
+
+    def _adjust_priority_for_hardware(self):
+        """
+        Probe NVIDIA Compute Capability; if >= 90,
+        inject the fused logp operator with the highest priority.
+        """
+        if device_ctx.device_type == "cuda":
+            try:
+                import torch
+
+                cc_major, cc_minor = torch.cuda.get_device_capability()
+                cc = cc_major * 10 + cc_minor
+                if cc >= 90:
+                    logger.info(
+                        f"Detected Advanced Architecture (SM{cc}). "
+                        "Enabling TMA & Warp Specialization."
+                    )
+                    logp_list = self._priority_map["cuda"]["logp"]
+                    if OpBackend.CUDA_FUSED_LOGP_SM90 not in logp_list:
+                        logp_list.insert(0, OpBackend.CUDA_FUSED_LOGP_SM90)
+            except Exception as e:
+                logger.warning(f"Failed to probe device capability: {e}")
 
     def get_op(self, op_type: str) -> Any:
         """Core distribution logic: Automatically select the best operator
